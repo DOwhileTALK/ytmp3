@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Downloader</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        form, .video-details {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px #ccc;
+            width: 100%;
+            max-width: 600px;
+        }
+        input[type="text"] {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            box-sizing: border-box;
+        }
+        .btn-active {
+            background-color: #28a745 !important; /* Green */
+            cursor: pointer;
+        }
+    
+        .btn-disabled {
+            background-color: #6c757d; /* Gray */
+            cursor: not-allowed;
+        }
+        button {
+            width: 48%;
+            padding: 10px;
+            margin: 5px 1%;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            color: #fff;
+            font-weight: bold;
+        }
+        .btn-mp3 { background-color: #5cb85c; }
+        .btn-mp3:hover { background-color: #4cae4c; }
+        .btn-mp4 { background-color: #007bff; }
+        .btn-mp4:hover { background-color: #0056b3; }
+        progress {
+            width: 100%;
+            height: 20px;
+            margin-top: 10px;
+            color: #4cae4c;
+            background-color: #ddd;
+            border-radius: 10px;
+            border: none;
+        }
+        progress[value]::-webkit-progress-bar {
+            background-color: #f3f3f3;
+            border-radius: 10px;
+        }
+        progress[value]::-webkit-progress-value {
+            background-color: #4cae4c;
+            border-radius: 10px;
+        }
+        #fetchStatus {
+            font-weight: bold;
+            text-align: center;
+        }
+        #downloadStatus {
+            font-weight: bold;
+            text-align: center;
+        }
+        .video-details img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .video-details h3 {
+            margin: 10px 0 5px;
+            color: #333;
+        }
+        .video-details p {
+            font-size: 0.9em;
+            color: #555;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>YouTube Downloader</h1>
+    <form id="videoForm">
+        <label for="url">Enter YouTube URL:</label><br>
+        <input type="text" id="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required>
+        <button type="button" id="fetchDetails">Fetch Video Details</button>
+        <div style="position: relative; width: 100%; margin-top: 10px;">
+            <progress id="fetchProgress" value="0" max="100" class="hidden"></progress>
+            <div id="fetchStatus" class="hidden" style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); font-size: 16px; color: #555;">Fetching...</div>
+        </div>
+    </form>
+
+
+<div class="video-details hidden" id="videoDetails">
+
+    <iframe id="videoPlayer" width="100%" height="300px" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+
+
+    <h3 id="videoTitle"></h3>
+    <hr>
+    <p id="videoDescription"></p>
+
+
+   
+        <button class="btn-mp3" id="downloadMp3">Download MP3</button>
+        <button class="btn-mp4" id="downloadMp4">Download MP4</button>
+
+        <div style="position: relative; width: 100%;">
+            <progress id="downloadProgress" value="0" max="100" class="hidden"></progress>
+            <div id="downloadStatus" class="hidden" style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); font-size: 16px; color: #555;">Downloading...</div>
+        </div>
+    </div>
+    
+
+
+
+<br><br><br>
+
+    
+
+<script>
+    const socket = io();
+    const videoForm = document.getElementById('videoForm');
+    const fetchDetailsBtn = document.getElementById('fetchDetails');
+    const videoDetails = document.getElementById('videoDetails');
+    const videoPlayer = document.getElementById('videoPlayer');
+    const videoTitle = document.getElementById('videoTitle');
+    const videoDescription = document.getElementById('videoDescription');
+    const downloadMp3 = document.getElementById('downloadMp3');
+    const downloadMp4 = document.getElementById('downloadMp4');
+    const progressBar = document.getElementById('downloadProgress');
+    const fetchProgress = document.getElementById('fetchProgress');
+    const fetchStatus = document.getElementById('fetchStatus'); // Added fetchStatus
+    const urlInput = document.getElementById('url');
+
+    // Initially disable the fetch button
+    fetchDetailsBtn.classList.add('btn-disabled');
+    fetchDetailsBtn.disabled = true;
+
+    // Enable/disable the fetch button based on input value
+    urlInput.addEventListener('input', function () {
+        if (urlInput.value.trim() !== '') {
+            fetchDetailsBtn.classList.remove('btn-disabled');
+            fetchDetailsBtn.classList.add('btn-active');
+            fetchDetailsBtn.disabled = false;
+        } else {
+            fetchDetailsBtn.classList.remove('btn-active');
+            fetchDetailsBtn.classList.add('btn-disabled');
+            fetchDetailsBtn.disabled = true;
+        }
+    });
+
+    // Fetch video details
+    fetchDetailsBtn.onclick = function () {
+        const videoUrl = urlInput.value.trim();
+        if (!videoUrl) {
+            alert('Please enter a valid YouTube URL.');
+            return;
+        }
+
+        fetchProgress.classList.remove('hidden');
+        fetchStatus.classList.remove('hidden');
+        fetchProgress.value = 0;
+        fetchStatus.textContent = "Fetching...";
+
+        // Simulate progress updates (since fetch API progress isn't natively supported)
+        const interval = setInterval(() => {
+            if (fetchProgress.value < 80) {
+                fetchProgress.value += 10; // Simulate up to 80% progress
+                fetchStatus.textContent = `Fetching... ${fetchProgress.value}%`;
+            }
+        }, 100);
+
+        fetch('/get_info', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `url=${encodeURIComponent(videoUrl)}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            clearInterval(interval); // Stop simulated progress
+            fetchProgress.value = 100; // Set to 100% on success
+            fetchStatus.textContent = "Fetching Complete!";
+            setTimeout(() => {
+                fetchProgress.classList.add('hidden');
+                fetchStatus.classList.add('hidden');
+            }, 2000);
+
+            // Update video details
+            const videoId = new URL(videoUrl).searchParams.get('v');
+            videoPlayer.src = `https://www.youtube.com/embed/${videoId}`;
+            videoTitle.textContent = data.title; // Set the title
+            videoDescription.textContent = data.description; // Set the description
+            videoDetails.classList.remove('hidden');
+        })
+        .catch(err => {
+            clearInterval(interval); // Stop simulated progress
+            fetchProgress.value = 0; // Reset progress on error
+            fetchProgress.classList.add('hidden');
+            fetchStatus.textContent = "Failed to Fetch!";
+            setTimeout(() => {
+                fetchStatus.classList.add('hidden');
+            }, 2000);
+            console.error(err);
+        });
+    };
+
+    // Handle download
+    function initiateDownload(format) {
+        const videoUrl = urlInput.value.trim();
+        const downloadStatus = document.getElementById('downloadStatus');
+
+        progressBar.classList.remove('hidden');
+        downloadStatus.classList.remove('hidden');
+        progressBar.value = 0;
+        downloadStatus.textContent = "Downloading...";
+
+        socket.emit('download', { url: videoUrl, format });
+
+        socket.on('progress', data => {
+            if (data.status === 'downloading' && data.total_bytes > 0) {
+                const percent = (data.downloaded_bytes / data.total_bytes) * 100;
+                progressBar.value = percent.toFixed(2);
+                downloadStatus.textContent = `Downloading... ${percent.toFixed(2)}%`;
+            }
+        });
+
+        socket.on('completed', data => {
+            progressBar.value = 100;
+            downloadStatus.textContent = "Download Complete!";
+            setTimeout(() => {
+                progressBar.classList.add('hidden');
+                downloadStatus.classList.add('hidden');
+            }, 2000);
+
+            const filePath = data.file_path;
+            const fileName = filePath.split('/').pop();
+
+            // Trigger a direct download
+            const downloadLink = document.createElement('a');
+            downloadLink.href = `/download/${encodeURIComponent(fileName)}`;
+            downloadLink.download = fileName;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        });
+
+        socket.on('error', data => {
+            downloadStatus.textContent = "Download Failed!";
+            setTimeout(() => {
+                progressBar.classList.add('hidden');
+                downloadStatus.classList.add('hidden');
+            }, 2000);
+            console.error(`Download failed: ${data.error}`);
+        });
+    }
+
+    // Set event listeners for download buttons
+    downloadMp3.onclick = () => initiateDownload('mp3');
+    downloadMp4.onclick = () => initiateDownload('mp4');
+</script>
+
+
+    
+    
+</body>
+</html>
